@@ -22,7 +22,7 @@ import "org.json.JSONObject"
 import "org.json.JSONArray"
 
 local konteks = this or service
-local CURRENT_VERSION = "v2.1"
+local CURRENT_VERSION = "v3.0"
 local UPDATE_URL = "https://raw.githubusercontent.com/novanblind/Google-Terjemahan-multi-mesin/main/Terjemahan.lua"
 
 -- Nama SharedPreferences unik khusus script ini
@@ -352,7 +352,7 @@ local function tryGroqModel(modelIndex, text, tgtLang, apiKey, callback)
                 local payload = JSONObject()
                 payload.put("model", model)
                 payload.put("temperature", 0.2)
-                payload.put("max_tokens", 4096) -- Kapasitas dinaikkan untuk naskah panjang
+                payload.put("max_tokens", 4096)
 
                 local msgs = JSONArray()
                 local sObj = JSONObject()
@@ -451,7 +451,7 @@ local function tryGeminiModel(modelIndex, text, tgtLang, apiKey, callback)
 
                 local genConfig = JSONObject()
                 genConfig.put("temperature", 0.2)
-                genConfig.put("maxOutputTokens", 8192) -- Kapasitas penuh naskah panjang
+                genConfig.put("maxOutputTokens", 8192)
                 payload.put("generationConfig", genConfig)
 
                 local data = String(payload.toString()).getBytes("UTF-8")
@@ -606,8 +606,8 @@ local function showSettingsDialog(onSaveCallback)
     layout.addView(lblVer)
 
     local btnCheckUpdate = Button(konteks)
-    btnCheckUpdate.setText("Periksa Versi Baru (" .. CURRENT_VERSION .. ")")
-    btnCheckUpdate.setContentDescription("Tombol periksa versi baru script di server GitHub")
+    btnCheckUpdate.setText("Periksa versi baru")
+    btnCheckUpdate.setContentDescription("Periksa versi baru")
     btnCheckUpdate.setOnClickListener(View.OnClickListener({
         onClick = function(v)
             checkUpdate()
@@ -850,7 +850,6 @@ local function openTranslatorApp()
             runTranslation(txt, curSrcCode, curTgtCode, function(success, result)
                 if success then
                     outputResult.setText(result)
-                    -- Penyesuaian ramah tunanetra: jika teks panjang, jangan membacakan semua otomatis
                     if #result > 120 then
                         speakText("Terjemahan selesai. Ketuk tombol bicara jika ingin mendengarkan.")
                     else
@@ -864,7 +863,7 @@ local function openTranslatorApp()
         end
     }))
 
-    -- Aksi Tombol Putar Suara (Tetap membacakan seluruh hasil jika ditekan manual)
+    -- Aksi Tombol Putar Suara
     btnSpeak.setOnClickListener(View.OnClickListener({
         onClick = function(v)
             local res = tostring(outputResult.getText())
