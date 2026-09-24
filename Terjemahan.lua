@@ -22,7 +22,7 @@ import "org.json.JSONObject"
 import "org.json.JSONArray"
 
 local konteks = this or service
-local CURRENT_VERSION = "v2.0"
+local CURRENT_VERSION = "v2.1"
 local UPDATE_URL = "https://raw.githubusercontent.com/novanblind/Google-Terjemahan-multi-mesin/main/Terjemahan.lua"
 
 -- Nama SharedPreferences unik khusus script ini
@@ -274,21 +274,28 @@ local function checkUpdate()
 end
 
 ----------------------------------------------------------------
--- Jalur Terjemahan 1: Google Translate (Free GTX)
+-- Jalur Terjemahan 1: Google Translate (Metode POST Ramah Teks Panjang)
 ----------------------------------------------------------------
 local function translateWithGoogle(text, srcLang, tgtLang, callback)
     Thread(Runnable({
         run = function()
             local resultText = nil
             pcall(function()
-                local encoded = URLEncoder.encode(text, "UTF-8")
-                local urlStr = string.format("https://translate.googleapis.com/translate_a/single?client=gtx&sl=%s&tl=%s&dt=t&q=%s", srcLang, tgtLang, encoded)
-                local url = URL(urlStr)
+                local postDataStr = "client=gtx&sl=" .. srcLang .. "&tl=" .. tgtLang .. "&dt=t&q=" .. URLEncoder.encode(text, "UTF-8")
+                local postData = String(postDataStr).getBytes("UTF-8")
+                local url = URL("https://translate.googleapis.com/translate_a/single")
                 local conn = url.openConnection()
-                conn.setRequestMethod("GET")
-                conn.setConnectTimeout(8000)
-                conn.setReadTimeout(8000)
+                conn.setRequestMethod("POST")
+                conn.setConnectTimeout(10000)
+                conn.setReadTimeout(15000)
                 conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+                conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
+                conn.setDoOutput(true)
+
+                local os = conn.getOutputStream()
+                os.write(postData)
+                os.flush()
+                os.close()
 
                 if conn.getResponseCode() == 200 then
                     local reader = BufferedReader(InputStreamReader(conn.getInputStream(), "UTF-8"))
@@ -325,7 +332,7 @@ local function translateWithGoogle(text, srcLang, tgtLang, callback)
 end
 
 ----------------------------------------------------------------
--- Jalur Terjemahan 2: Groq AI (Fallback 3 Model)
+-- Jalur Terjemahan 2: Groq AI (Fallback 3 Model & Max Tokens 4096)
 ----------------------------------------------------------------
 local function tryGroqModel(modelIndex, text, tgtLang, apiKey, callback)
     if modelIndex > #GROQ_MODELS then
@@ -345,7 +352,7 @@ local function tryGroqModel(modelIndex, text, tgtLang, apiKey, callback)
                 local payload = JSONObject()
                 payload.put("model", model)
                 payload.put("temperature", 0.2)
-                payload.put("max_tokens", 1000)
+                payload.put("max_tokens", 4096) -- Kapasitas dinaikkan untuk naskah panjang
 
                 local msgs = JSONArray()
                 local sObj = JSONObject()
@@ -364,8 +371,8 @@ local function tryGroqModel(modelIndex, text, tgtLang, apiKey, callback)
                 local url = URL(endpoint)
                 local conn = url.openConnection()
                 conn.setRequestMethod("POST")
-                conn.setConnectTimeout(8000)
-                conn.setReadTimeout(12000)
+                conn.setConnectTimeout(10000)
+                conn.setReadTimeout(20000)
                 conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8")
                 conn.setRequestProperty("Authorization", "Bearer " .. apiKey)
                 conn.setDoOutput(true)
@@ -413,7 +420,7 @@ local function tryGroqModel(modelIndex, text, tgtLang, apiKey, callback)
 end
 
 ----------------------------------------------------------------
--- Jalur Terjemahan 3: Gemini Flash-Lite (Fallback 5 Model)
+-- Jalur Terjemahan 3: Gemini Flash-Lite (Fallback 5 Model & Max Output 8192)
 ----------------------------------------------------------------
 local function tryGeminiModel(modelIndex, text, tgtLang, apiKey, callback)
     if modelIndex > #GEMINI_MODELS then
@@ -444,15 +451,15 @@ local function tryGeminiModel(modelIndex, text, tgtLang, apiKey, callback)
 
                 local genConfig = JSONObject()
                 genConfig.put("temperature", 0.2)
-                genConfig.put("maxOutputTokens", 1000)
+                genConfig.put("maxOutputTokens", 8192) -- Kapasitas penuh naskah panjang
                 payload.put("generationConfig", genConfig)
 
                 local data = String(payload.toString()).getBytes("UTF-8")
                 local url = URL(endpoint)
                 local conn = url.openConnection()
                 conn.setRequestMethod("POST")
-                conn.setConnectTimeout(8000)
-                conn.setReadTimeout(12000)
+                conn.setConnectTimeout(10000)
+                conn.setReadTimeout(20000)
                 conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8")
                 conn.setDoOutput(true)
 
@@ -542,7 +549,7 @@ local function runTranslation(text, srcLang, tgtLang, callback)
 end
 
 ----------------------------------------------------------------
--- Dialog Pengaturan Mesin Terjemahan (Termasuk Periksa Versi)
+-- Dialog Pengaturan Mesin Terjemahan
 ----------------------------------------------------------------
 local function showSettingsDialog(onSaveCallback)
     local builder = AlertDialog.Builder(konteks)
@@ -843,7 +850,12 @@ local function openTranslatorApp()
             runTranslation(txt, curSrcCode, curTgtCode, function(success, result)
                 if success then
                     outputResult.setText(result)
-                    speakText(result)
+                    -- Penyesuaian ramah tunanetra: jika teks panjang, jangan membacakan semua otomatis
+                    if #result > 120 then
+                        speakText("Terjemahan selesai. Ketuk tombol bicara jika ingin mendengarkan.")
+                    else
+                        speakText(result)
+                    end
                 else
                     outputResult.setText("Terjadi kesalahan: " .. tostring(result))
                     speakText("Gagal menerjemahkan teks")
@@ -852,7 +864,7 @@ local function openTranslatorApp()
         end
     }))
 
-    -- Aksi Tombol Putar Suara
+    -- Aksi Tombol Putar Suara (Tetap membacakan seluruh hasil jika ditekan manual)
     btnSpeak.setOnClickListener(View.OnClickListener({
         onClick = function(v)
             local res = tostring(outputResult.getText())
