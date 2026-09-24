@@ -8,6 +8,8 @@ import "android.widget.*"
 import "android.view.View"
 import "android.view.WindowManager"
 import "android.view.Gravity"
+import "android.graphics.Color"
+import "android.graphics.drawable.ColorDrawable"
 import "android.os.Handler"
 import "android.os.Looper"
 import "java.lang.Thread"
@@ -22,7 +24,7 @@ import "org.json.JSONObject"
 import "org.json.JSONArray"
 
 local konteks = this or service
-local CURRENT_VERSION = "v3.0"
+local CURRENT_VERSION = "v3.1"
 local UPDATE_URL = "https://raw.githubusercontent.com/novanblind/Google-Terjemahan-multi-mesin/main/Terjemahan.lua"
 
 -- Nama SharedPreferences unik khusus script ini
@@ -32,6 +34,13 @@ local PREF_KEY_GROQ_KEY = "pref_groq_key"
 local PREF_KEY_GEMINI_KEY = "pref_gemini_key"
 local PREF_KEY_SRC = "pref_src_lang"
 local PREF_KEY_TGT = "pref_tgt_lang"
+
+-- Konstanta Warna Tema Gelap
+local COLOR_BG = Color.BLACK
+local COLOR_TEXT = Color.WHITE
+local COLOR_HINT = Color.parseColor("#888888")
+local COLOR_INPUT_BG = Color.parseColor("#1C1C1C")
+local COLOR_BTN_BG = Color.parseColor("#282828")
 
 -- 3 Model Groq Teks Terbaik
 local GROQ_MODELS = {
@@ -128,6 +137,22 @@ local function copyToClipboard(txt)
     end)
 end
 
+local function createDialogBuilder()
+    local themeId = 4 -- Fallback THEME_DEVICE_DEFAULT_DARK
+    pcall(function()
+        if AlertDialog.THEME_DEVICE_DEFAULT_DARK then
+            themeId = AlertDialog.THEME_DEVICE_DEFAULT_DARK
+        end
+    end)
+    local ok, builder = pcall(function()
+        return AlertDialog.Builder(konteks, themeId)
+    end)
+    if ok and builder then
+        return builder
+    end
+    return AlertDialog.Builder(konteks)
+end
+
 local function showSafeDialog(dlg)
     pcall(function()
         local win = dlg.getWindow()
@@ -137,9 +162,39 @@ local function showSafeDialog(dlg)
                 overlayType = WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
             end
             win.setType(overlayType)
+            win.setBackgroundDrawable(ColorDrawable(COLOR_BG))
         end
     end)
     dlg.show()
+
+    -- Pewarnaan teks bawaan AlertDialog (Judul, Pesan, Tombol, List)
+    pcall(function()
+        local titleId = konteks.getResources().getIdentifier("alertTitle", "id", "android")
+        if titleId and titleId ~= 0 then
+            local tvTitle = dlg.findViewById(titleId)
+            if tvTitle then tvTitle.setTextColor(COLOR_TEXT) end
+        end
+
+        local msgId = konteks.getResources().getIdentifier("message", "id", "android")
+        if msgId and msgId ~= 0 then
+            local tvMsg = dlg.findViewById(msgId)
+            if tvMsg then tvMsg.setTextColor(COLOR_TEXT) end
+        end
+
+        local pBtn = dlg.getButton(DialogInterface.BUTTON_POSITIVE)
+        if pBtn then pBtn.setTextColor(COLOR_TEXT) end
+
+        local nBtn = dlg.getButton(DialogInterface.BUTTON_NEGATIVE)
+        if nBtn then nBtn.setTextColor(COLOR_TEXT) end
+
+        local neuBtn = dlg.getButton(DialogInterface.BUTTON_NEUTRAL)
+        if neuBtn then neuBtn.setTextColor(COLOR_TEXT) end
+
+        local lv = dlg.getListView()
+        if lv then
+            lv.setBackgroundColor(COLOR_BG)
+        end
+    end)
 end
 
 ----------------------------------------------------------------
@@ -203,7 +258,7 @@ local function checkUpdate()
                             hasUpdate = true
                         end
 
-                        local builder = AlertDialog.Builder(konteks)
+                        local builder = createDialogBuilder()
                         if hasUpdate then
                             builder.setTitle("Pembaruan Ditemukan!")
                             builder.setMessage("Versi saat ini: " .. CURRENT_VERSION .. "\nVersi baru: " .. tostring(remoteVer) .. "\n\nApakah Anda ingin memperbarui script ini sekarang?")
@@ -552,16 +607,18 @@ end
 -- Dialog Pengaturan Mesin Terjemahan
 ----------------------------------------------------------------
 local function showSettingsDialog(onSaveCallback)
-    local builder = AlertDialog.Builder(konteks)
+    local builder = createDialogBuilder()
     builder.setTitle("Pengaturan Mesin Terjemahan")
 
     local layout = LinearLayout(konteks)
     layout.setOrientation(LinearLayout.VERTICAL)
     layout.setPadding(40, 20, 40, 20)
+    layout.setBackgroundColor(COLOR_BG)
 
     local lblEngine = TextView(konteks)
     lblEngine.setText("Pilih Mesin Terjemahan Utama:")
     lblEngine.setTextSize(15)
+    lblEngine.setTextColor(COLOR_TEXT)
     layout.addView(lblEngine)
 
     local radioGroup = RadioGroup(konteks)
@@ -573,6 +630,7 @@ local function showSettingsDialog(onSaveCallback)
         local rb = RadioButton(konteks)
         rb.setText(eng)
         rb.setId(i)
+        rb.setTextColor(COLOR_TEXT)
         rb.setContentDescription("Pilihan mesin: " .. eng)
         if eng == currentEngine then rb.setChecked(true) end
         radioGroup.addView(rb)
@@ -582,20 +640,30 @@ local function showSettingsDialog(onSaveCallback)
 
     local lblGroq = TextView(konteks)
     lblGroq.setText("\nKunci API Groq:")
+    lblGroq.setTextColor(COLOR_TEXT)
     layout.addView(lblGroq)
 
     local inputGroq = EditText(konteks)
     inputGroq.setHint("Tempel kunci API Groq di sini...")
+    inputGroq.setHintTextColor(COLOR_HINT)
+    inputGroq.setTextColor(COLOR_TEXT)
+    inputGroq.setBackgroundColor(COLOR_INPUT_BG)
+    inputGroq.setPadding(20, 20, 20, 20)
     inputGroq.setContentDescription("Kolom pengisian kunci API Groq")
     inputGroq.setText(getPrefString(PREF_KEY_GROQ_KEY, ""))
     layout.addView(inputGroq)
 
     local lblGemini = TextView(konteks)
     lblGemini.setText("\nKunci API Gemini:")
+    lblGemini.setTextColor(COLOR_TEXT)
     layout.addView(lblGemini)
 
     local inputGemini = EditText(konteks)
     inputGemini.setHint("Tempel kunci API Gemini di sini...")
+    inputGemini.setHintTextColor(COLOR_HINT)
+    inputGemini.setTextColor(COLOR_TEXT)
+    inputGemini.setBackgroundColor(COLOR_INPUT_BG)
+    inputGemini.setPadding(20, 20, 20, 20)
     inputGemini.setContentDescription("Kolom pengisian kunci API Gemini")
     inputGemini.setText(getPrefString(PREF_KEY_GEMINI_KEY, ""))
     layout.addView(inputGemini)
@@ -603,10 +671,13 @@ local function showSettingsDialog(onSaveCallback)
     -- Tombol Periksa Versi Baru di Dalam Pengaturan
     local lblVer = TextView(konteks)
     lblVer.setText("\nInformasi Versi:")
+    lblVer.setTextColor(COLOR_TEXT)
     layout.addView(lblVer)
 
     local btnCheckUpdate = Button(konteks)
     btnCheckUpdate.setText("Periksa versi baru")
+    btnCheckUpdate.setTextColor(COLOR_TEXT)
+    btnCheckUpdate.setBackgroundColor(COLOR_BTN_BG)
     btnCheckUpdate.setContentDescription("Periksa versi baru")
     btnCheckUpdate.setOnClickListener(View.OnClickListener({
         onClick = function(v)
@@ -616,6 +687,7 @@ local function showSettingsDialog(onSaveCallback)
     layout.addView(btnCheckUpdate)
 
     local scroll = ScrollView(konteks)
+    scroll.setBackgroundColor(COLOR_BG)
     scroll.addView(layout)
     builder.setView(scroll)
 
@@ -641,7 +713,7 @@ end
 -- Dialog Pemilih Bahasa Ramah Aksesibilitas
 ----------------------------------------------------------------
 local function showLanguageSelector(title, isSource, onSelected)
-    local builder = AlertDialog.Builder(konteks)
+    local builder = createDialogBuilder()
     builder.setTitle(title)
 
     local names = {}
@@ -667,12 +739,13 @@ end
 -- Antarmuka Utama Terjemahan Ramah Tunanetra
 ----------------------------------------------------------------
 local function openTranslatorApp()
-    local builder = AlertDialog.Builder(konteks)
+    local builder = createDialogBuilder()
     builder.setTitle("Google Terjemahan Multi-Mesin (" .. CURRENT_VERSION .. ")")
 
     local root = LinearLayout(konteks)
     root.setOrientation(LinearLayout.VERTICAL)
     root.setPadding(35, 20, 35, 20)
+    root.setBackgroundColor(COLOR_BG)
 
     -- Status Mesin Aktif
     local curEngine = getPrefString(PREF_KEY_ENGINE, "Google")
@@ -680,6 +753,7 @@ local function openTranslatorApp()
     tvEngineStatus.setText("Mesin aktif: " .. curEngine)
     tvEngineStatus.setContentDescription("Mesin terjemahan yang aktif saat ini: " .. curEngine)
     tvEngineStatus.setTextSize(14)
+    tvEngineStatus.setTextColor(COLOR_TEXT)
     tvEngineStatus.setGravity(Gravity.RIGHT)
     tvEngineStatus.setPadding(0, 0, 0, 10)
     root.addView(tvEngineStatus)
@@ -695,8 +769,14 @@ local function openTranslatorApp()
         if v.code == curTgtCode then curTgtName = v.name end
     end
 
+    local btnLayoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+    btnLayoutParams.setMargins(0, 6, 0, 6)
+
     -- 1. Tombol Bahasa Asal
     local btnSrc = Button(konteks)
+    btnSrc.setTextColor(COLOR_TEXT)
+    btnSrc.setBackgroundColor(COLOR_BTN_BG)
+    btnSrc.setLayoutParams(btnLayoutParams)
     local function updateSrcButton()
         btnSrc.setText("Bahasa asal: " .. curSrcName)
         btnSrc.setContentDescription("Bahasa asal saat ini " .. curSrcName .. ". Ketuk dua kali untuk memilih bahasa asal.")
@@ -707,11 +787,17 @@ local function openTranslatorApp()
     -- 2. Tombol Tukar Bahasa
     local btnSwap = Button(konteks)
     btnSwap.setText("Tukar bahasa asal dan tujuan")
+    btnSwap.setTextColor(COLOR_TEXT)
+    btnSwap.setBackgroundColor(COLOR_BTN_BG)
+    btnSwap.setLayoutParams(btnLayoutParams)
     btnSwap.setContentDescription("Tombol tukar posisi antara bahasa asal dan bahasa tujuan.")
     root.addView(btnSwap)
 
     -- 3. Tombol Bahasa Tujuan
     local btnTgt = Button(konteks)
+    btnTgt.setTextColor(COLOR_TEXT)
+    btnTgt.setBackgroundColor(COLOR_BTN_BG)
+    btnTgt.setLayoutParams(btnLayoutParams)
     local function updateTgtButton()
         btnTgt.setText("Bahasa tujuan: " .. curTgtName)
         btnTgt.setContentDescription("Bahasa tujuan saat ini " .. curTgtName .. ". Ketuk dua kali untuk memilih bahasa tujuan.")
@@ -723,10 +809,15 @@ local function openTranslatorApp()
     local lblInput = TextView(konteks)
     lblInput.setText("\nKolom Teks Asal:")
     lblInput.setTextSize(14)
+    lblInput.setTextColor(COLOR_TEXT)
     root.addView(lblInput)
 
     local inputSource = EditText(konteks)
     inputSource.setHint("Ketik atau tempel teks yang ingin diterjemahkan di sini...")
+    inputSource.setHintTextColor(COLOR_HINT)
+    inputSource.setTextColor(COLOR_TEXT)
+    inputSource.setBackgroundColor(COLOR_INPUT_BG)
+    inputSource.setPadding(20, 20, 20, 20)
     inputSource.setContentDescription("Kolom teks asal. Masukkan teks yang akan diterjemahkan.")
     inputSource.setMinLines(3)
     inputSource.setGravity(Gravity.TOP)
@@ -735,6 +826,9 @@ local function openTranslatorApp()
     -- Tombol Terjemahkan
     local btnTranslate = Button(konteks)
     btnTranslate.setText("Mulai Terjemahkan")
+    btnTranslate.setTextColor(COLOR_TEXT)
+    btnTranslate.setBackgroundColor(COLOR_BTN_BG)
+    btnTranslate.setLayoutParams(btnLayoutParams)
     btnTranslate.setContentDescription("Tombol mulai terjemahkan teks.")
     root.addView(btnTranslate)
 
@@ -742,10 +836,15 @@ local function openTranslatorApp()
     local lblResult = TextView(konteks)
     lblResult.setText("\nHasil Terjemahan:")
     lblResult.setTextSize(14)
+    lblResult.setTextColor(COLOR_TEXT)
     root.addView(lblResult)
 
     local outputResult = EditText(konteks)
     outputResult.setHint("Hasil terjemahan akan tampil di sini...")
+    outputResult.setHintTextColor(COLOR_HINT)
+    outputResult.setTextColor(COLOR_TEXT)
+    outputResult.setBackgroundColor(COLOR_INPUT_BG)
+    outputResult.setPadding(20, 20, 20, 20)
     outputResult.setContentDescription("Kolom hasil terjemahan.")
     outputResult.setMinLines(3)
     outputResult.setGravity(Gravity.TOP)
@@ -757,23 +856,34 @@ local function openTranslatorApp()
     actionRow.setOrientation(LinearLayout.HORIZONTAL)
     actionRow.setPadding(0, 15, 0, 10)
 
+    local function makeActionParam()
+        local p = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0)
+        p.setMargins(6, 0, 6, 0)
+        return p
+    end
+
     local btnSpeak = Button(konteks)
     btnSpeak.setText("Bicara")
+    btnSpeak.setTextColor(COLOR_TEXT)
+    btnSpeak.setBackgroundColor(COLOR_BTN_BG)
     btnSpeak.setContentDescription("Putar suara teks hasil terjemahan")
-    local paramAct = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0)
-    btnSpeak.setLayoutParams(paramAct)
+    btnSpeak.setLayoutParams(makeActionParam())
     actionRow.addView(btnSpeak)
 
     local btnCopy = Button(konteks)
     btnCopy.setText("Salin")
+    btnCopy.setTextColor(COLOR_TEXT)
+    btnCopy.setBackgroundColor(COLOR_BTN_BG)
     btnCopy.setContentDescription("Salin hasil terjemahan ke papan klip")
-    btnCopy.setLayoutParams(paramAct)
+    btnCopy.setLayoutParams(makeActionParam())
     actionRow.addView(btnCopy)
 
     local btnClear = Button(konteks)
     btnClear.setText("Hapus Teks")
+    btnClear.setTextColor(COLOR_TEXT)
+    btnClear.setBackgroundColor(COLOR_BTN_BG)
     btnClear.setContentDescription("Hapus isi kolom teks asal dan hasil terjemahan")
-    btnClear.setLayoutParams(paramAct)
+    btnClear.setLayoutParams(makeActionParam())
     actionRow.addView(btnClear)
 
     root.addView(actionRow)
@@ -825,7 +935,6 @@ local function openTranslatorApp()
             setPrefString(PREF_KEY_SRC, curSrcCode)
             setPrefString(PREF_KEY_TGT, curTgtCode)
 
-            -- Tukar isi kotak teks jika sudah ada isinya
             local srcText = tostring(inputSource.getText())
             local resText = tostring(outputResult.getText())
             inputSource.setText(resText)
@@ -897,6 +1006,7 @@ local function openTranslatorApp()
     }))
 
     local scroll = ScrollView(konteks)
+    scroll.setBackgroundColor(COLOR_BG)
     scroll.addView(root)
     builder.setView(scroll)
 
