@@ -22,7 +22,11 @@ import "org.json.JSONObject"
 import "org.json.JSONArray"
 
 local konteks = this or service
-local PREF_NAME = "accessible_translator_pref"
+local CURRENT_VERSION = "v2.0"
+local UPDATE_URL = "https://raw.githubusercontent.com/novanblind/Google-Terjemahan-multi-mesin/main/Terjemahan.lua"
+
+-- Nama SharedPreferences unik khusus script ini
+local PREF_NAME = "novan_google_terjemahan_multimesin_prefs_2026"
 local PREF_KEY_ENGINE = "pref_engine"
 local PREF_KEY_GROQ_KEY = "pref_groq_key"
 local PREF_KEY_GEMINI_KEY = "pref_gemini_key"
@@ -86,7 +90,7 @@ local function setPrefString(key, val)
 end
 
 ----------------------------------------------------------------
--- Utilitas Aksesibilitas (TTS, Toast, Window Overlay)
+-- Utilitas Aksesibilitas (TTS, Toast, Window Overlay, Jaringan)
 ----------------------------------------------------------------
 local function speakText(txt)
     if not txt or txt == "" then return end
@@ -106,6 +110,12 @@ local function showToast(msg)
             Toast.makeText(konteks, tostring(msg), Toast.LENGTH_SHORT).show()
         end
     }))
+end
+
+local function isConnected()
+    local cm = konteks.getSystemService(Context.CONNECTIVITY_SERVICE)
+    local activeNetwork = cm and cm.getActiveNetworkInfo()
+    return activeNetwork ~= nil and activeNetwork.isConnected()
 end
 
 local function copyToClipboard(txt)
@@ -130,6 +140,137 @@ local function showSafeDialog(dlg)
         end
     end)
     dlg.show()
+end
+
+----------------------------------------------------------------
+-- Fitur Periksa Versi Baru
+----------------------------------------------------------------
+local function checkUpdate()
+    if not isConnected() then
+        showToast("Butuh koneksi internet untuk memeriksa versi")
+        speakText("Butuh koneksi internet untuk memeriksa versi baru")
+        return
+    end
+
+    showToast("Memeriksa versi baru...")
+    speakText("Memeriksa versi baru")
+
+    Thread(Runnable({
+        run = function()
+            local success = false
+            local remoteCode = nil
+
+            pcall(function()
+                local url = URL(UPDATE_URL)
+                local conn = url.openConnection()
+                conn.setRequestMethod("GET")
+                conn.setConnectTimeout(8000)
+                conn.setReadTimeout(12000)
+                conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+                conn.setRequestProperty("Cache-Control", "no-cache")
+
+                if conn.getResponseCode() == 200 then
+                    local reader = BufferedReader(InputStreamReader(conn.getInputStream(), "UTF-8"))
+                    local lines = {}
+                    local line = reader.readLine()
+                    while line ~= nil do
+                        table.insert(lines, line)
+                        line = reader.readLine()
+                    end
+                    reader.close()
+                    remoteCode = table.concat(lines, "\n")
+                    success = true
+                end
+                conn.disconnect()
+            end)
+
+            local handler = Handler(Looper.getMainLooper())
+            handler.post(Runnable({
+                run = function()
+                    if success and remoteCode and #remoteCode > 0 then
+                        local remoteVer = remoteCode:match('CURRENT_VERSION%s*=%s*["\']([^"\']+)["\']')
+                        if not remoteVer then
+                            remoteVer = remoteCode:match('[Vv]ersi%s*([%d%.]+)') or remoteCode:match('v([%d%.]+)')
+                        end
+
+                        local hasUpdate = false
+                        if remoteVer then
+                            if remoteVer ~= CURRENT_VERSION then
+                                hasUpdate = true
+                            end
+                        else
+                            remoteVer = "Tersedia di Server"
+                            hasUpdate = true
+                        end
+
+                        local builder = AlertDialog.Builder(konteks)
+                        if hasUpdate then
+                            builder.setTitle("Pembaruan Ditemukan!")
+                            builder.setMessage("Versi saat ini: " .. CURRENT_VERSION .. "\nVersi baru: " .. tostring(remoteVer) .. "\n\nApakah Anda ingin memperbarui script ini sekarang?")
+                            speakText("Pembaruan tersedia versi " .. tostring(remoteVer) .. ". Apakah Anda ingin memperbarui sekarang?")
+
+                            builder.setPositiveButton("Perbarui Sekarang", DialogInterface.OnClickListener({
+                                onClick = function(dialog, which)
+                                    local scriptPath = nil
+                                    pcall(function()
+                                        local info = debug.getinfo(1, "S")
+                                        if info and info.source and info.source:sub(1, 1) == "@" then
+                                            scriptPath = info.source:sub(2)
+                                        end
+                                    end)
+
+                                    local fileSaved = false
+                                    if scriptPath then
+                                        pcall(function()
+                                            local f = io.open(scriptPath, "w")
+                                            if f then
+                                                f:write(remoteCode)
+                                                f:close()
+                                                fileSaved = true
+                                            end
+                                        end)
+                                    end
+
+                                    pcall(function()
+                                        local cm = konteks.getSystemService(Context.CLIPBOARD_SERVICE)
+                                        local cd = ClipData.newPlainText("Script Update", remoteCode)
+                                        cm.setPrimaryClip(cd)
+                                    end)
+
+                                    if fileSaved then
+                                        showToast("Script berhasil diperbarui ke " .. tostring(remoteVer))
+                                        speakText("Script berhasil diperbarui ke versi " .. tostring(remoteVer))
+                                    else
+                                        showToast("Script baru telah disalin ke papan klip")
+                                        speakText("Script baru telah disalin ke papan klip")
+                                    end
+                                end
+                            }))
+
+                            builder.setNegativeButton("Batal", DialogInterface.OnClickListener({
+                                onClick = function(dialog, which)
+                                    dialog.dismiss()
+                                end
+                            }))
+                        else
+                            builder.setTitle("Versi Terbaru")
+                            builder.setMessage("Script Anda sudah menggunakan versi paling baru (" .. CURRENT_VERSION .. "). Tidak ada pembaruan.")
+                            speakText("Script Anda sudah menggunakan versi paling baru " .. CURRENT_VERSION)
+                            builder.setPositiveButton("OK", DialogInterface.OnClickListener({
+                                onClick = function(dialog, which)
+                                    dialog.dismiss()
+                                end
+                            }))
+                        end
+                        showSafeDialog(builder.create())
+                    else
+                        showToast("Gagal memeriksa versi baru dari server")
+                        speakText("Gagal memeriksa versi baru dari server")
+                    end
+                end
+            }))
+        end
+    })).start()
 end
 
 ----------------------------------------------------------------
@@ -401,7 +542,7 @@ local function runTranslation(text, srcLang, tgtLang, callback)
 end
 
 ----------------------------------------------------------------
--- Dialog Pengaturan Mesin Terjemahan
+-- Dialog Pengaturan Mesin Terjemahan (Termasuk Periksa Versi)
 ----------------------------------------------------------------
 local function showSettingsDialog(onSaveCallback)
     local builder = AlertDialog.Builder(konteks)
@@ -451,6 +592,21 @@ local function showSettingsDialog(onSaveCallback)
     inputGemini.setContentDescription("Kolom pengisian kunci API Gemini")
     inputGemini.setText(getPrefString(PREF_KEY_GEMINI_KEY, ""))
     layout.addView(inputGemini)
+
+    -- Tombol Periksa Versi Baru di Dalam Pengaturan
+    local lblVer = TextView(konteks)
+    lblVer.setText("\nInformasi Versi:")
+    layout.addView(lblVer)
+
+    local btnCheckUpdate = Button(konteks)
+    btnCheckUpdate.setText("Periksa Versi Baru (" .. CURRENT_VERSION .. ")")
+    btnCheckUpdate.setContentDescription("Tombol periksa versi baru script di server GitHub")
+    btnCheckUpdate.setOnClickListener(View.OnClickListener({
+        onClick = function(v)
+            checkUpdate()
+        end
+    }))
+    layout.addView(btnCheckUpdate)
 
     local scroll = ScrollView(konteks)
     scroll.addView(layout)
@@ -505,7 +661,7 @@ end
 ----------------------------------------------------------------
 local function openTranslatorApp()
     local builder = AlertDialog.Builder(konteks)
-    builder.setTitle("Google Terjemahan Multi-Mesin")
+    builder.setTitle("Google Terjemahan Multi-Mesin (" .. CURRENT_VERSION .. ")")
 
     local root = LinearLayout(konteks)
     root.setOrientation(LinearLayout.VERTICAL)
